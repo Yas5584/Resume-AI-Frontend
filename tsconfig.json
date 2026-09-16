@@ -21,8 +21,8 @@
     "baseUrl": ".",
     "paths": {
       "@/*": ["./src/*"],
-      "@resumeai/shared": ["../../packages/shared/src/index.ts"],
-      "@resumeai/config": ["../../packages/config/src/index.ts"]
+      "@resumeai/shared": ["./packages/shared/src/index.ts"],
+      "@resumeai/config": ["./packages/config/src/index.ts"]
     }
   },
   "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],

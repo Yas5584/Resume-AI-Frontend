@@ -2,6 +2,9 @@
   "name": "@resumeai/web",
   "version": "0.1.0",
   "private": true,
+  "workspaces": [
+    "packages/*"
+  ],
   "scripts": {
     "dev": "next dev -p 3000",
     "build": "next build",
@@ -11,7 +14,6 @@
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",
-    "@resumeai/config": "*",
     "@resumeai/shared": "*",
     "@tanstack/react-query": "^5.66.0",
     "clsx": "^2.1.1",
