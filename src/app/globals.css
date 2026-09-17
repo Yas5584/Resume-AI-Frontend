@@ -3,8 +3,27 @@
 @tailwind utilities;
 
 @layer base {
+  html {
+    scroll-behavior: smooth;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    html {
+      scroll-behavior: auto;
+    }
+  }
+
   body {
     @apply bg-background text-foreground antialiased selection:bg-primary/20;
     font-feature-settings: "cv02", "cv03", "cv04", "cv11";
   }
+}
+
+.bg-dot-pattern {
+  background-image: radial-gradient(rgba(148, 163, 184, 0.18) 1px, transparent 1px);
+  background-size: 24px 24px;
+}
+
+.bg-radial-glow {
+  background: radial-gradient(circle at 50% -10%, rgba(37, 99, 235, 0.16) 0%, transparent 70%);
 }

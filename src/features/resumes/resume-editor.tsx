@@ -11,6 +11,7 @@ import {
 } from "@resumeai/shared";
 import { ResumeDetail, resumesService } from "../../services/resumes.service";
 import { ResumeRenderer } from "./renderer/resume-renderer";
+import { PreviewOverlay } from "./renderer/preview-overlay";
 import { DesignPanel } from "./design/design-panel";
 import { getTemplate } from "./templates/registry";
 import { PersonalInfoSection } from "./sections/personal-info-section";
@@ -26,6 +27,7 @@ import { LinksSection } from "./sections/links-section";
 import { SectionSettingsModal } from "./sections/section-settings-modal";
 import { VersionsModal } from "./sections/versions-modal";
 import { ExportButton } from "./export/export-button";
+import { useKeyboardShortcuts } from "../../hooks/use-keyboard-shortcuts";
 import { Button } from "../../components/ui/button";
 import {
   Card,
@@ -56,15 +58,30 @@ import {
   Link2,
 } from "lucide-react";
 
+// ─── Types ───────────────────────────────────────────────────────────────────
+
 interface ResumeEditorProps {
   initialResume: ResumeDetail;
 }
 
 type SaveStatus = "saved" | "saving" | "unsaved" | "error";
-type MobileTab = "edit" | "design" | "preview" | "split";
-type EditorMode = "content" | "design";
+type WorkspaceMode = "edit" | "split" | "preview";
+type EditorPane = "content" | "design";
+
+// ─── Section Definition ──────────────────────────────────────────────────────
+
+interface SectionDef {
+  id: string;
+  label: string;
+  icon: React.ComponentType<{ className?: string }>;
+  count?: number;
+  hasData?: boolean;
+}
+
+// ─── Component ───────────────────────────────────────────────────────────────
 
 export function ResumeEditor({ initialResume }: ResumeEditorProps) {
+  // ── Core Resume State ──────────────────────────────────────────────────────
   const [title, setTitle] = React.useState(initialResume.title);
   const [targetRole, setTargetRole] = React.useState(
     initialResume.targetRole || "",
@@ -98,16 +115,35 @@ export function ResumeEditor({ initialResume }: ResumeEditorProps) {
     },
   );
 
-  const [editorMode, setEditorMode] = React.useState<EditorMode>("content");
+  // ── Workspace State ────────────────────────────────────────────────────────
+  const [workspaceMode, setWorkspaceMode] =
+    React.useState<WorkspaceMode>("split");
+  const [editorPane, setEditorPane] = React.useState<EditorPane>("content");
   const [activeSection, setActiveSection] =
     React.useState<string>("personalInfo");
   const [saveStatus, setSaveStatus] = React.useState<SaveStatus>("saved");
   const [, setLastSavedAt] = React.useState<Date>(new Date());
-  const [mobileTab, setMobileTab] = React.useState<MobileTab>("edit");
   const [settingsModalOpen, setSettingsModalOpen] = React.useState(false);
   const [versionsModalOpen, setVersionsModalOpen] = React.useState(false);
+  const previousModeRef = React.useRef<WorkspaceMode>("split");
 
-  // Debounce & Dirty tracking refs
+  // Detect mobile/tablet for workspace mode constraints
+  const [isMobile, setIsMobile] = React.useState(false);
+  React.useEffect(() => {
+    const checkMobile = () => setIsMobile(window.innerWidth < 1024);
+    checkMobile();
+    window.addEventListener("resize", checkMobile);
+    return () => window.removeEventListener("resize", checkMobile);
+  }, []);
+
+  // Force edit mode on mobile (no split)
+  React.useEffect(() => {
+    if (isMobile && workspaceMode === "split") {
+      setWorkspaceMode("edit");
+    }
+  }, [isMobile, workspaceMode]);
+
+  // ── Autosave Engine ────────────────────────────────────────────────────────
   const debounceTimerRef = React.useRef<NodeJS.Timeout | null>(null);
   const isDirtyRef = React.useRef(false);
   const isMountedRef = React.useRef(false);
@@ -127,7 +163,7 @@ export function ResumeEditor({ initialResume }: ResumeEditorProps) {
           templateId: currentConfig.templateId,
           templateConfig: currentConfig,
           resumeData: currentData,
-          createVersion: false, // Do not spam version snapshots on autosave
+          createVersion: false,
         });
         setSaveStatus("saved");
         setLastSavedAt(new Date());
@@ -140,7 +176,6 @@ export function ResumeEditor({ initialResume }: ResumeEditorProps) {
     [initialResume.id],
   );
 
-  // Schedule autosave after 1500ms of inactivity
   const scheduleAutosave = React.useCallback(
     (
       newTitle: string,
@@ -162,7 +197,6 @@ export function ResumeEditor({ initialResume }: ResumeEditorProps) {
     [triggerAutosave],
   );
 
-  // Mark dirty & queue autosave when content updates
   const handleDataChange = (updater: (prev: ResumeData) => ResumeData) => {
     setResumeData((prev) => {
       const next = updater(prev);
@@ -171,7 +205,6 @@ export function ResumeEditor({ initialResume }: ResumeEditorProps) {
     });
   };
 
-  // Mark dirty & queue autosave when design updates
   const handleConfigChange = (updatedConfig: TemplateConfig) => {
     setTemplateConfig(updatedConfig);
     scheduleAutosave(title, targetRole, resumeData, updatedConfig);
@@ -187,14 +220,23 @@ export function ResumeEditor({ initialResume }: ResumeEditorProps) {
     scheduleAutosave(title, newRole, resumeData, templateConfig);
   };
 
-  // Immediate manual save
-  const handleManualSave = () => {
+  const handleManualSave = React.useCallback(() => {
     if (debounceTimerRef.current) {
       clearTimeout(debounceTimerRef.current);
     }
     triggerAutosave(title, targetRole, resumeData, templateConfig);
-  };
+  }, [title, targetRole, resumeData, templateConfig, triggerAutosave]);
 
+  const handleBeforeExport = React.useCallback(async () => {
+    if (isDirtyRef.current || debounceTimerRef.current) {
+      if (debounceTimerRef.current) {
+        clearTimeout(debounceTimerRef.current);
+      }
+      await triggerAutosave(title, targetRole, resumeData, templateConfig);
+    }
+  }, [title, targetRole, resumeData, templateConfig, triggerAutosave]);
+
+  // Unmount flush
   React.useEffect(() => {
     isMountedRef.current = true;
     return () => {
@@ -207,77 +249,411 @@ export function ResumeEditor({ initialResume }: ResumeEditorProps) {
     };
   }, [title, targetRole, resumeData, templateConfig, triggerAutosave]);
 
+  // ── Keyboard Shortcuts ─────────────────────────────────────────────────────
+  const handleTogglePreview = React.useCallback(() => {
+    if (workspaceMode === "preview") {
+      setWorkspaceMode(previousModeRef.current);
+    } else {
+      previousModeRef.current = workspaceMode;
+      setWorkspaceMode("preview");
+    }
+  }, [workspaceMode]);
+
+  const handleExitPreview = React.useCallback(() => {
+    if (workspaceMode === "preview") {
+      setWorkspaceMode(previousModeRef.current);
+    }
+  }, [workspaceMode]);
+
+  const handleToggleEdit = React.useCallback(() => {
+    setWorkspaceMode("edit");
+  }, []);
+
+  const handleToggleSplit = React.useCallback(() => {
+    if (!isMobile) {
+      setWorkspaceMode("split");
+    }
+  }, [isMobile]);
+
+  useKeyboardShortcuts({
+    onTogglePreview: handleTogglePreview,
+    onExitPreview: handleExitPreview,
+    onManualSave: handleManualSave,
+    onToggleEdit: handleToggleEdit,
+    onToggleSplit: handleToggleSplit,
+    isPreviewActive: workspaceMode === "preview",
+  });
+
+  // ── Section Definitions ────────────────────────────────────────────────────
   const activeTemplateDef = getTemplate(templateConfig.templateId);
 
-  const sectionsList = [
-    { id: "personalInfo", label: "Personal Info", icon: User },
-    { id: "summary", label: "Summary", icon: FileText },
-    {
-      id: "experience",
-      label: "Experience",
-      icon: Briefcase,
-      count: resumeData.experience?.length,
-    },
-    {
-      id: "education",
-      label: "Education",
-      icon: GraduationCap,
-      count: resumeData.education?.length,
-    },
-    {
-      id: "projects",
-      label: "Projects",
-      icon: FolderGit2,
-      count: resumeData.projects?.length,
-    },
-    {
-      id: "skills",
-      label: "Skills",
-      icon: Wrench,
-      count: resumeData.skills?.length,
-    },
-    {
-      id: "certifications",
-      label: "Certifications",
-      icon: Award,
-      count: resumeData.certifications?.length,
-    },
-    {
-      id: "achievements",
-      label: "Achievements",
-      icon: Trophy,
-      count: resumeData.achievements?.length,
-    },
-    {
-      id: "languages",
-      label: "Languages",
-      icon: Languages,
-      count: resumeData.languages?.length,
-    },
-    {
-      id: "links",
-      label: "Links",
-      icon: Link2,
-      count: resumeData.links?.length,
-    },
-  ];
+  const sectionsList: SectionDef[] = React.useMemo(
+    () => [
+      {
+        id: "personalInfo",
+        label: "Personal Info",
+        icon: User,
+        hasData: !!(
+          resumeData.personalInfo?.fullName ||
+          resumeData.personalInfo?.email
+        ),
+      },
+      {
+        id: "summary",
+        label: "Summary",
+        icon: FileText,
+        hasData: !!resumeData.summary,
+      },
+      {
+        id: "experience",
+        label: "Experience",
+        icon: Briefcase,
+        count: resumeData.experience?.length,
+        hasData: (resumeData.experience?.length ?? 0) > 0,
+      },
+      {
+        id: "education",
+        label: "Education",
+        icon: GraduationCap,
+        count: resumeData.education?.length,
+        hasData: (resumeData.education?.length ?? 0) > 0,
+      },
+      {
+        id: "projects",
+        label: "Projects",
+        icon: FolderGit2,
+        count: resumeData.projects?.length,
+        hasData: (resumeData.projects?.length ?? 0) > 0,
+      },
+      {
+        id: "skills",
+        label: "Skills",
+        icon: Wrench,
+        count: resumeData.skills?.length,
+        hasData: (resumeData.skills?.length ?? 0) > 0,
+      },
+      {
+        id: "certifications",
+        label: "Certifications",
+        icon: Award,
+        count: resumeData.certifications?.length,
+        hasData: (resumeData.certifications?.length ?? 0) > 0,
+      },
+      {
+        id: "achievements",
+        label: "Achievements",
+        icon: Trophy,
+        count: resumeData.achievements?.length,
+        hasData: (resumeData.achievements?.length ?? 0) > 0,
+      },
+      {
+        id: "languages",
+        label: "Languages",
+        icon: Languages,
+        count: resumeData.languages?.length,
+        hasData: (resumeData.languages?.length ?? 0) > 0,
+      },
+      {
+        id: "links",
+        label: "Links",
+        icon: Link2,
+        count: resumeData.links?.length,
+        hasData: (resumeData.links?.length ?? 0) > 0,
+      },
+    ],
+    [resumeData],
+  );
 
-  return (
+  // ── Section scroll-into-view ───────────────────────────────────────────────
+  const sectionNavRef = React.useRef<HTMLDivElement>(null);
+  const handleSectionSelect = (sectionId: string) => {
+    setActiveSection(sectionId);
+    // Scroll the selected pill into view
+    if (sectionNavRef.current) {
+      const btn = sectionNavRef.current.querySelector(
+        `[data-section="${sectionId}"]`,
+      );
+      if (btn) {
+        btn.scrollIntoView({ behavior: "smooth", inline: "center", block: "nearest" });
+      }
+    }
+  };
+
+  // ── Render Helpers ─────────────────────────────────────────────────────────
+
+  /** Active section form (rendered in edit/split modes) */
+  const renderActiveSectionForm = () => {
+    switch (activeSection) {
+      case "personalInfo":
+        return (
+          <PersonalInfoSection
+            value={resumeData.personalInfo}
+            onChange={(personalInfo) =>
+              handleDataChange((prev) => ({ ...prev, personalInfo }))
+            }
+          />
+        );
+      case "summary":
+        return (
+          <SummarySection
+            value={resumeData.summary}
+            resumeId={initialResume.id}
+            onApplied={(newData) => handleDataChange(() => newData)}
+            onChange={(summary) =>
+              handleDataChange((prev) => ({ ...prev, summary }))
+            }
+          />
+        );
+      case "experience":
+        return (
+          <ExperienceSection
+            value={resumeData.experience}
+            resumeId={initialResume.id}
+            onApplied={(newData) => handleDataChange(() => newData)}
+            onChange={(experience) =>
+              handleDataChange((prev) => ({ ...prev, experience }))
+            }
+          />
+        );
+      case "education":
+        return (
+          <EducationSection
+            value={resumeData.education}
+            onChange={(education) =>
+              handleDataChange((prev) => ({ ...prev, education }))
+            }
+          />
+        );
+      case "projects":
+        return (
+          <ProjectsSection
+            value={resumeData.projects}
+            resumeId={initialResume.id}
+            onApplied={(newData) => handleDataChange(() => newData)}
+            onChange={(projects) =>
+              handleDataChange((prev) => ({ ...prev, projects }))
+            }
+          />
+        );
+      case "skills":
+        return (
+          <SkillsSection
+            value={resumeData.skills}
+            resumeId={initialResume.id}
+            onApplied={(newData) => handleDataChange(() => newData)}
+            onChange={(skills) =>
+              handleDataChange((prev) => ({ ...prev, skills }))
+            }
+          />
+        );
+      case "certifications":
+        return (
+          <CertificationsSection
+            value={resumeData.certifications}
+            onChange={(certifications) =>
+              handleDataChange((prev) => ({
+                ...prev,
+                certifications,
+              }))
+            }
+          />
+        );
+      case "achievements":
+        return (
+          <AchievementsSection
+            value={resumeData.achievements}
+            resumeId={initialResume.id}
+            onApplied={(newData) => handleDataChange(() => newData)}
+            onChange={(achievements) =>
+              handleDataChange((prev) => ({
+                ...prev,
+                achievements,
+              }))
+            }
+          />
+        );
+      case "languages":
+        return (
+          <LanguagesSection
+            value={resumeData.languages}
+            onChange={(languages) =>
+              handleDataChange((prev) => ({ ...prev, languages }))
+            }
+          />
+        );
+      case "links":
+        return (
+          <LinksSection
+            value={resumeData.links}
+            onChange={(links) =>
+              handleDataChange((prev) => ({ ...prev, links }))
+            }
+          />
+        );
+      default:
+        return null;
+    }
+  };
+
+  /** Editor pane content (content sections or design panel) */
+  const renderEditorPane = () => (
     <div className="space-y-4">
-      {/* Top Action & Status Bar */}
-      <header className="bg-card border border-border rounded-lg p-3 sm:p-4 shadow-sm flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-        {/* Left: Back button & Title/Role inputs */}
-        <div className="flex items-start sm:items-center space-x-3">
+      {/* Content / Design Mode Switcher */}
+      <div className="flex rounded-lg border border-border bg-muted p-1 text-xs">
+        <button
+          type="button"
+          onClick={() => setEditorPane("content")}
+          className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-md font-medium transition-all ${
+            editorPane === "content"
+              ? "bg-white text-foreground shadow-xs font-semibold"
+              : "text-muted-foreground hover:text-foreground"
+          }`}
+        >
+          <Edit3 className="h-3.5 w-3.5" />
+          <span>Content Sections</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => setEditorPane("design")}
+          className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-md font-medium transition-all ${
+            editorPane === "design"
+              ? "bg-white text-foreground shadow-xs font-semibold"
+              : "text-muted-foreground hover:text-foreground"
+          }`}
+        >
+          <Palette className="h-3.5 w-3.5 text-primary" />
+          <span>Templates & Design</span>
+        </button>
+      </div>
+
+      {/* Design Panel */}
+      {editorPane === "design" ? (
+        <Card className="shadow-xs">
+          <CardContent className="p-4 sm:p-6">
+            <DesignPanel
+              config={templateConfig}
+              onChange={handleConfigChange}
+            />
+          </CardContent>
+        </Card>
+      ) : (
+        <>
+          {/* Section Selector Tabs Bar with completion indicators */}
+          <div
+            ref={sectionNavRef}
+            className="flex items-center space-x-1.5 overflow-x-auto pb-2 scrollbar-thin"
+          >
+            {sectionsList.map((sec) => {
+              const Icon = sec.icon;
+              const isActive = activeSection === sec.id;
+              return (
+                <button
+                  key={sec.id}
+                  type="button"
+                  data-section={sec.id}
+                  onClick={() => handleSectionSelect(sec.id)}
+                  className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition-colors border ${
+                    isActive
+                      ? "bg-primary text-primary-foreground border-primary shadow-xs"
+                      : "bg-card text-muted-foreground border-border hover:bg-muted/70 hover:text-foreground"
+                  }`}
+                >
+                  {/* Completion indicator dot */}
+                  <span
+                    className={`inline-block h-1.5 w-1.5 rounded-full shrink-0 ${
+                      sec.hasData
+                        ? isActive
+                          ? "bg-primary-foreground"
+                          : "bg-emerald-500"
+                        : isActive
+                          ? "bg-primary-foreground/40"
+                          : "bg-neutral-300"
+                    }`}
+                  />
+                  <Icon className="h-3.5 w-3.5" />
+                  <span>{sec.label}</span>
+                  {sec.count !== undefined && sec.count > 0 && (
+                    <span
+                      className={`ml-1 text-[10px] px-1.5 py-0.5 rounded-full font-semibold ${
+                        isActive
+                          ? "bg-primary-foreground/20 text-primary-foreground"
+                          : "bg-muted text-muted-foreground"
+                      }`}
+                    >
+                      {sec.count}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Active Section Editor */}
+          <Card className="shadow-xs">
+            <CardHeader className="pb-3 border-b border-border/60">
+              <CardTitle className="text-base font-semibold flex items-center justify-between">
+                <span>
+                  {sectionsList.find((s) => s.id === activeSection)?.label}
+                </span>
+                <span className="text-xs font-normal text-muted-foreground">
+                  Auto-saved to cloud
+                </span>
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="pt-4 sm:pt-6">
+              {renderActiveSectionForm()}
+            </CardContent>
+          </Card>
+        </>
+      )}
+    </div>
+  );
+
+  /** Inline preview panel (rendered in split mode) */
+  const renderInlinePreview = () => (
+    <div className="sticky top-4 space-y-2">
+      <div className="flex items-center justify-between px-1">
+        <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+          <Eye className="h-3.5 w-3.5 text-primary" />
+          Live Preview
+        </span>
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-medium text-foreground bg-muted px-2 py-0.5 rounded-md border border-border">
+            {activeTemplateDef.name}
+          </span>
+          <button
+            type="button"
+            onClick={() => setEditorPane("design")}
+            className="text-xs text-primary hover:underline font-medium"
+          >
+            Customize ⚙
+          </button>
+        </div>
+      </div>
+
+      <div className="rounded-lg border border-border shadow-sm overflow-hidden bg-white max-h-[calc(100vh-100px)] flex flex-col">
+        <ResumeRenderer data={resumeData} config={templateConfig} />
+      </div>
+    </div>
+  );
+
+  // ── Main Render ────────────────────────────────────────────────────────────
+  return (
+    <div className="space-y-3">
+      {/* ── Top Toolbar ──────────────────────────────────────────────────── */}
+      <header className="bg-card border border-border rounded-lg p-2.5 sm:p-3 shadow-sm flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+        {/* Left: Back + Title + Role */}
+        <div className="flex items-start sm:items-center space-x-2.5 min-w-0">
           <Link href="/resumes">
             <Button
               variant="ghost"
               size="icon"
-              className="h-9 w-9 text-muted-foreground hover:text-foreground"
+              className="h-9 w-9 text-muted-foreground hover:text-foreground shrink-0"
             >
               <ArrowLeft className="h-4 w-4" />
             </Button>
           </Link>
-          <div className="space-y-1 flex-1 min-w-0">
+          <div className="space-y-0.5 flex-1 min-w-0">
             <input
               type="text"
               className="text-base sm:text-lg font-bold text-foreground bg-transparent border-b border-transparent hover:border-border focus:border-primary focus:outline-none px-1 py-0.5 w-full max-w-sm sm:max-w-md transition-colors"
@@ -289,7 +665,7 @@ export function ResumeEditor({ initialResume }: ResumeEditorProps) {
               <span>Target Role:</span>
               <input
                 type="text"
-                className="font-medium text-foreground bg-transparent border-b border-transparent hover:border-border focus:border-primary focus:outline-none px-1 py-0.2 w-48 transition-colors"
+                className="font-medium text-foreground bg-transparent border-b border-transparent hover:border-border focus:border-primary focus:outline-none px-1 py-0.5 w-48 transition-colors"
                 value={targetRole}
                 onChange={(e) => handleTargetRoleChange(e.target.value)}
                 placeholder="e.g. Lead Engineer"
@@ -298,9 +674,53 @@ export function ResumeEditor({ initialResume }: ResumeEditorProps) {
           </div>
         </div>
 
-        {/* Right: Autosave Status, Checkpoint, Settings & View Toggles */}
-        <div className="flex items-center justify-between sm:justify-end space-x-2 sm:space-x-3 border-t md:border-t-0 pt-3 md:pt-0">
-          {/* Status Indicator */}
+        {/* Right: Mode Switcher + Actions */}
+        <div className="flex items-center justify-between sm:justify-end space-x-2 sm:space-x-2.5 border-t md:border-t-0 pt-2.5 md:pt-0 flex-wrap gap-y-2">
+          {/* Workspace Mode Switcher */}
+          <div className="flex rounded-md border border-border bg-muted p-0.5 text-xs">
+            <button
+              type="button"
+              className={`px-2.5 py-1 rounded-sm font-medium transition-colors ${
+                workspaceMode === "edit"
+                  ? "bg-white text-foreground shadow-xs"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+              onClick={() => setWorkspaceMode("edit")}
+              title="Edit mode — full-width editor (Ctrl+E)"
+            >
+              <Edit3 className="h-3.5 w-3.5 sm:mr-1 inline" />
+              <span className="hidden sm:inline">Edit</span>
+            </button>
+            {/* Split mode — hidden on mobile */}
+            <button
+              type="button"
+              className={`hidden lg:inline-flex px-2.5 py-1 rounded-sm font-medium transition-colors items-center ${
+                workspaceMode === "split"
+                  ? "bg-white text-foreground shadow-xs"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+              onClick={() => setWorkspaceMode("split")}
+              title="Split mode — editor + preview side by side (Ctrl+\)"
+            >
+              <Columns className="h-3.5 w-3.5 sm:mr-1" />
+              <span className="hidden sm:inline">Split</span>
+            </button>
+            <button
+              type="button"
+              className={`px-2.5 py-1 rounded-sm font-medium transition-colors ${
+                workspaceMode === "preview"
+                  ? "bg-white text-foreground shadow-xs"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+              onClick={handleTogglePreview}
+              title="Preview mode — full-screen resume preview (Ctrl+P)"
+            >
+              <Eye className="h-3.5 w-3.5 sm:mr-1 inline" />
+              <span className="hidden sm:inline">Preview</span>
+            </button>
+          </div>
+
+          {/* Autosave Status */}
           <div className="flex items-center space-x-1.5 text-xs text-muted-foreground mr-1 select-none">
             {saveStatus === "saving" && (
               <>
@@ -334,6 +754,7 @@ export function ResumeEditor({ initialResume }: ResumeEditorProps) {
             )}
           </div>
 
+          {/* Action Buttons */}
           <Button
             type="button"
             variant="outline"
@@ -361,335 +782,41 @@ export function ResumeEditor({ initialResume }: ResumeEditorProps) {
           <ExportButton
             resumeId={initialResume.id}
             resumeTitle={title}
-            onBeforeExport={async () => {
-              if (isDirtyRef.current || debounceTimerRef.current) {
-                if (debounceTimerRef.current) {
-                  clearTimeout(debounceTimerRef.current);
-                }
-                await triggerAutosave(
-                  title,
-                  targetRole,
-                  resumeData,
-                  templateConfig,
-                );
-              }
-            }}
+            onBeforeExport={handleBeforeExport}
           />
-
-          {/* View Modes for Mobile / Tablet */}
-          <div className="flex lg:hidden rounded-md border border-border bg-muted p-0.5 text-xs">
-            <button
-              type="button"
-              className={`px-2.5 py-1 rounded-sm font-medium transition-colors ${
-                mobileTab === "edit"
-                  ? "bg-white text-foreground shadow-xs"
-                  : "text-muted-foreground hover:text-foreground"
-              }`}
-              onClick={() => {
-                setMobileTab("edit");
-                setEditorMode("content");
-              }}
-            >
-              <Edit3 className="h-3.5 w-3.5 sm:mr-1 inline" />
-              <span className="hidden sm:inline">Content</span>
-            </button>
-            <button
-              type="button"
-              className={`px-2.5 py-1 rounded-sm font-medium transition-colors ${
-                mobileTab === "design"
-                  ? "bg-white text-foreground shadow-xs"
-                  : "text-muted-foreground hover:text-foreground"
-              }`}
-              onClick={() => {
-                setMobileTab("design");
-                setEditorMode("design");
-              }}
-            >
-              <Palette className="h-3.5 w-3.5 sm:mr-1 inline" />
-              <span className="hidden sm:inline">Design</span>
-            </button>
-            <button
-              type="button"
-              className={`px-2.5 py-1 rounded-sm font-medium transition-colors ${
-                mobileTab === "preview"
-                  ? "bg-white text-foreground shadow-xs"
-                  : "text-muted-foreground hover:text-foreground"
-              }`}
-              onClick={() => setMobileTab("preview")}
-            >
-              <Eye className="h-3.5 w-3.5 sm:mr-1 inline" />
-              <span className="hidden sm:inline">Preview</span>
-            </button>
-            <button
-              type="button"
-              className={`hidden md:inline px-2.5 py-1 rounded-sm font-medium transition-colors ${
-                mobileTab === "split"
-                  ? "bg-white text-foreground shadow-xs"
-                  : "text-muted-foreground hover:text-foreground"
-              }`}
-              onClick={() => setMobileTab("split")}
-            >
-              <Columns className="h-3.5 w-3.5 sm:mr-1 inline" />
-              <span>Split</span>
-            </button>
-          </div>
         </div>
       </header>
 
-      {/* Main Workspace Area */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-        {/* Left Side: Content & Design Mode */}
-        <div
-          className={`space-y-4 ${
-            mobileTab === "preview" ? "hidden lg:block lg:col-span-6" : ""
-          } ${
-            mobileTab === "split"
-              ? "col-span-1 md:col-span-6 lg:col-span-6"
-              : "col-span-1 lg:col-span-6"
-          }`}
-        >
-          {/* Primary Mode Switcher (Desktop / General) */}
-          <div className="flex rounded-lg border border-border bg-muted p-1 text-xs">
-            <button
-              type="button"
-              onClick={() => setEditorMode("content")}
-              className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-md font-medium transition-all ${
-                editorMode === "content"
-                  ? "bg-white text-foreground shadow-xs font-semibold"
-                  : "text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              <Edit3 className="h-3.5 w-3.5" />
-              <span>Content Sections</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setEditorMode("design")}
-              className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-md font-medium transition-all ${
-                editorMode === "design"
-                  ? "bg-white text-foreground shadow-xs font-semibold"
-                  : "text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              <Palette className="h-3.5 w-3.5 text-primary" />
-              <span>Templates & Design</span>
-            </button>
-          </div>
+      {/* ── Workspace Area ───────────────────────────────────────────────── */}
 
-          {/* If Design Mode */}
-          {editorMode === "design" ? (
-            <Card className="shadow-xs">
-              <CardContent className="p-4 sm:p-6">
-                <DesignPanel
-                  config={templateConfig}
-                  onChange={handleConfigChange}
-                />
-              </CardContent>
-            </Card>
-          ) : (
-            /* If Content Mode: Section Navigation & Forms */
-            <>
-              {/* Section Selector Tabs Bar */}
-              <div className="flex items-center space-x-1.5 overflow-x-auto pb-2 scrollbar-thin">
-                {sectionsList.map((sec) => {
-                  const Icon = sec.icon;
-                  const isActive = activeSection === sec.id;
-                  return (
-                    <button
-                      key={sec.id}
-                      type="button"
-                      onClick={() => setActiveSection(sec.id)}
-                      className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition-colors border ${
-                        isActive
-                          ? "bg-primary text-primary-foreground border-primary shadow-xs"
-                          : "bg-card text-muted-foreground border-border hover:bg-muted/70 hover:text-foreground"
-                      }`}
-                    >
-                      <Icon className="h-3.5 w-3.5" />
-                      <span>{sec.label}</span>
-                      {sec.count !== undefined && sec.count > 0 && (
-                        <span
-                          className={`ml-1 text-[10px] px-1.5 py-0.2 rounded-full font-semibold ${
-                            isActive
-                              ? "bg-primary-foreground/20 text-primary-foreground"
-                              : "bg-muted text-muted-foreground"
-                          }`}
-                        >
-                          {sec.count}
-                        </span>
-                      )}
-                    </button>
-                  );
-                })}
-              </div>
+      {/* Edit Mode — Full-width editor, no preview */}
+      {workspaceMode === "edit" && (
+        <div className="max-w-4xl mx-auto">{renderEditorPane()}</div>
+      )}
 
-              {/* Active Section Editor Container */}
-              <Card className="shadow-xs">
-                <CardHeader className="pb-3 border-b border-border/60">
-                  <CardTitle className="text-base font-semibold flex items-center justify-between">
-                    <span>
-                      {sectionsList.find((s) => s.id === activeSection)?.label}
-                    </span>
-                    <span className="text-xs font-normal text-muted-foreground">
-                      Auto-saved to cloud
-                    </span>
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="pt-4 sm:pt-6">
-                  {activeSection === "personalInfo" && (
-                    <PersonalInfoSection
-                      value={resumeData.personalInfo}
-                      onChange={(personalInfo) =>
-                        handleDataChange((prev) => ({ ...prev, personalInfo }))
-                      }
-                    />
-                  )}
-
-                  {activeSection === "summary" && (
-                    <SummarySection
-                      value={resumeData.summary}
-                      resumeId={initialResume.id}
-                      onApplied={(newData) => handleDataChange(() => newData)}
-                      onChange={(summary) =>
-                        handleDataChange((prev) => ({ ...prev, summary }))
-                      }
-                    />
-                  )}
-
-                  {activeSection === "experience" && (
-                    <ExperienceSection
-                      value={resumeData.experience}
-                      resumeId={initialResume.id}
-                      onApplied={(newData) => handleDataChange(() => newData)}
-                      onChange={(experience) =>
-                        handleDataChange((prev) => ({ ...prev, experience }))
-                      }
-                    />
-                  )}
-
-                  {activeSection === "education" && (
-                    <EducationSection
-                      value={resumeData.education}
-                      onChange={(education) =>
-                        handleDataChange((prev) => ({ ...prev, education }))
-                      }
-                    />
-                  )}
-
-                  {activeSection === "projects" && (
-                    <ProjectsSection
-                      value={resumeData.projects}
-                      resumeId={initialResume.id}
-                      onApplied={(newData) => handleDataChange(() => newData)}
-                      onChange={(projects) =>
-                        handleDataChange((prev) => ({ ...prev, projects }))
-                      }
-                    />
-                  )}
-
-                  {activeSection === "skills" && (
-                    <SkillsSection
-                      value={resumeData.skills}
-                      resumeId={initialResume.id}
-                      onApplied={(newData) => handleDataChange(() => newData)}
-                      onChange={(skills) =>
-                        handleDataChange((prev) => ({ ...prev, skills }))
-                      }
-                    />
-                  )}
-
-                  {activeSection === "certifications" && (
-                    <CertificationsSection
-                      value={resumeData.certifications}
-                      onChange={(certifications) =>
-                        handleDataChange((prev) => ({
-                          ...prev,
-                          certifications,
-                        }))
-                      }
-                    />
-                  )}
-
-                  {activeSection === "achievements" && (
-                    <AchievementsSection
-                      value={resumeData.achievements}
-                      resumeId={initialResume.id}
-                      onApplied={(newData) => handleDataChange(() => newData)}
-                      onChange={(achievements) =>
-                        handleDataChange((prev) => ({
-                          ...prev,
-                          achievements,
-                        }))
-                      }
-                    />
-                  )}
-
-                  {activeSection === "languages" && (
-                    <LanguagesSection
-                      value={resumeData.languages}
-                      onChange={(languages) =>
-                        handleDataChange((prev) => ({ ...prev, languages }))
-                      }
-                    />
-                  )}
-
-                  {activeSection === "links" && (
-                    <LinksSection
-                      value={resumeData.links}
-                      onChange={(links) =>
-                        handleDataChange((prev) => ({ ...prev, links }))
-                      }
-                    />
-                  )}
-                </CardContent>
-              </Card>
-            </>
-          )}
-        </div>
-
-        {/* Right Side: Professional Template Preview Engine */}
-        <div
-          className={`space-y-4 ${
-            mobileTab === "edit" || mobileTab === "design"
-              ? "hidden lg:block lg:col-span-6"
-              : ""
-          } ${
-            mobileTab === "split"
-              ? "col-span-1 md:col-span-6 lg:col-span-6"
-              : "col-span-1 lg:col-span-6"
-          }`}
-        >
-          <div className="sticky top-20 space-y-2">
-            <div className="flex items-center justify-between px-1">
-              <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
-                <Eye className="h-3.5 w-3.5 text-primary" />
-                Live Preview
-              </span>
-              <div className="flex items-center gap-2">
-                <span className="text-xs font-medium text-foreground bg-muted px-2 py-0.5 rounded-md border border-border">
-                  {activeTemplateDef.name}
-                </span>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setEditorMode("design");
-                    setMobileTab("design");
-                  }}
-                  className="text-xs text-primary hover:underline font-medium"
-                >
-                  Customize ⚙
-                </button>
-              </div>
-            </div>
-
-            <div className="rounded-lg border border-border shadow-sm overflow-hidden bg-white max-h-[calc(100vh-140px)] flex flex-col">
-              <ResumeRenderer data={resumeData} config={templateConfig} />
-            </div>
+      {/* Split Mode — Editor (55%) + Preview (45%) side by side */}
+      {workspaceMode === "split" && (
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-start">
+          <div className="col-span-1 lg:col-span-7">{renderEditorPane()}</div>
+          <div className="col-span-1 lg:col-span-5">
+            {renderInlinePreview()}
           </div>
         </div>
-      </div>
+      )}
 
-      {/* Section Visibility & Ordering Modal */}
+      {/* Preview Mode — Full-screen overlay (rendered via portal) */}
+      <PreviewOverlay
+        open={workspaceMode === "preview"}
+        onClose={handleExitPreview}
+        resumeData={resumeData}
+        templateConfig={templateConfig}
+        resumeId={initialResume.id}
+        resumeTitle={title}
+        templateName={activeTemplateDef.name}
+        onBeforeExport={handleBeforeExport}
+      />
+
+      {/* ── Modals ───────────────────────────────────────────────────────── */}
       <SectionSettingsModal
         open={settingsModalOpen}
         onOpenChange={setSettingsModalOpen}
@@ -709,7 +836,6 @@ export function ResumeEditor({ initialResume }: ResumeEditorProps) {
         }
       />
 
-      {/* Versions & Checkpoints Modal */}
       <VersionsModal
         open={versionsModalOpen}
         onOpenChange={setVersionsModalOpen}

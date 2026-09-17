@@ -9,7 +9,23 @@ import { MobileNav } from "./mobile-nav";
 import { useAuth } from "../../hooks/use-auth";
 import { LoadingState } from "../common/loading-state";
 
+// Context for child pages to opt out of max-w-7xl container
+interface AppShellContextValue {
+  fullWidth: boolean;
+  setFullWidth: (value: boolean) => void;
+}
+
+const AppShellContext = React.createContext<AppShellContextValue>({
+  fullWidth: false,
+  setFullWidth: () => {},
+});
+
+export function useAppShell() {
+  return React.useContext(AppShellContext);
+}
+
 export function AppShell({ children }: { children: React.ReactNode }) {
+  const [fullWidth, setFullWidth] = React.useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = React.useState(false);
   const { user, isLoading, isError, error, refetch } = useAuth();
   const router = useRouter();
@@ -79,23 +95,31 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <div className="min-h-screen bg-background flex">
-      {/* Desktop Sidebar */}
-      <Sidebar />
+    <AppShellContext.Provider value={{ fullWidth, setFullWidth }}>
+      <div className="min-h-screen bg-background flex">
+        {/* Desktop Sidebar */}
+        <Sidebar />
 
-      {/* Mobile Navigation Slide-over */}
-      <MobileNav
-        open={mobileMenuOpen}
-        onClose={() => setMobileMenuOpen(false)}
-      />
+        {/* Mobile Navigation Slide-over */}
+        <MobileNav
+          open={mobileMenuOpen}
+          onClose={() => setMobileMenuOpen(false)}
+        />
 
-      {/* Main Content Area */}
-      <div className="flex-1 flex flex-col min-w-0">
-        <Header onMenuClick={() => setMobileMenuOpen(true)} />
-        <main className="flex-1 p-4 sm:p-6 lg:p-8 max-w-7xl w-full mx-auto">
-          {children}
-        </main>
+        {/* Main Content Area */}
+        <div className="flex-1 flex flex-col min-w-0">
+          <Header onMenuClick={() => setMobileMenuOpen(true)} />
+          <main
+            className={
+              fullWidth
+                ? "flex-1 p-2 sm:p-3 w-full"
+                : "flex-1 p-4 sm:p-6 lg:p-8 max-w-7xl w-full mx-auto"
+            }
+          >
+            {children}
+          </main>
+        </div>
       </div>
-    </div>
+    </AppShellContext.Provider>
   );
 }

@@ -8,6 +8,7 @@ import {
 } from "../../../../services/resumes.service";
 import { ResumeEditor } from "../../../../features/resumes/resume-editor";
 import { Button } from "../../../../components/ui/button";
+import { useAppShell } from "../../../../components/layout/app-shell";
 import { Loader2, AlertCircle, ArrowLeft } from "lucide-react";
 
 export default function ResumeDetailPage({
@@ -17,6 +18,14 @@ export default function ResumeDetailPage({
 }) {
   const unwrappedParams = React.use(params);
   const id = unwrappedParams.id;
+
+  const { setFullWidth } = useAppShell();
+
+  // Enable full-width layout for the editor; restore on unmount
+  React.useEffect(() => {
+    setFullWidth(true);
+    return () => setFullWidth(false);
+  }, [setFullWidth]);
 
   const [resume, setResume] = React.useState<ResumeDetail | null>(null);
   const [loading, setLoading] = React.useState(true);

@@ -7,9 +7,21 @@ import { ZoomIn, ZoomOut, Maximize2 } from "lucide-react";
 interface PageContainerProps {
   pageSize: PageSize;
   children: React.ReactNode;
+  /** "compact" for inline split-view preview, "full" for standalone/overlay preview */
+  variant?: "compact" | "full";
 }
 
-export function PageContainer({ pageSize, children }: PageContainerProps) {
+const ZOOM_PRESETS = [
+  { label: "75%", value: 75 },
+  { label: "100%", value: 100 },
+  { label: "125%", value: 125 },
+];
+
+export function PageContainer({
+  pageSize,
+  children,
+  variant = "compact",
+}: PageContainerProps) {
   const containerRef = React.useRef<HTMLDivElement>(null);
   const [zoom, setZoom] = React.useState<number>(100);
   const [isAutoFit, setIsAutoFit] = React.useState<boolean>(true);
@@ -24,11 +36,12 @@ export function PageContainer({ pageSize, children }: PageContainerProps) {
   // Calculate zoom percentage to fit the container width
   const calcFitZoom = React.useCallback(() => {
     if (!containerRef.current) return 100;
-    const availableWidth = containerRef.current.clientWidth - 48; // padding (24px each side)
+    const padding = variant === "full" ? 64 : 48;
+    const availableWidth = containerRef.current.clientWidth - padding;
     if (availableWidth <= 0) return 100;
     const calculated = Math.floor((availableWidth / baseWidth) * 100);
-    return Math.min(100, Math.max(35, calculated));
-  }, [baseWidth]);
+    return Math.min(variant === "full" ? 150 : 100, Math.max(35, calculated));
+  }, [baseWidth, variant]);
 
   // Responsive auto-fit on mount and container resize
   React.useEffect(() => {
@@ -72,6 +85,11 @@ export function PageContainer({ pageSize, children }: PageContainerProps) {
     setZoom(calcFitZoom());
   };
 
+  const handlePresetZoom = (value: number) => {
+    setIsAutoFit(false);
+    setZoom(value);
+  };
+
   return (
     <div className="flex flex-col h-full">
       {/* Zoom / Page Info Toolbar */}
@@ -80,8 +98,14 @@ export function PageContainer({ pageSize, children }: PageContainerProps) {
           <span className="font-semibold uppercase tracking-wider text-neutral-700 text-[11px]">
             {pageSize === "a4" ? "A4 (210×297mm)" : "US Letter (8.5×11in)"}
           </span>
-          <span className="text-neutral-400">•</span>
-          <span className="text-neutral-500 hidden sm:inline">Page Canvas</span>
+          {variant === "compact" && (
+            <>
+              <span className="text-neutral-400">•</span>
+              <span className="text-neutral-500 hidden sm:inline">
+                Page Canvas
+              </span>
+            </>
+          )}
         </div>
 
         <div className="flex items-center gap-1 sm:gap-1.5 bg-white border border-neutral-200 rounded-md p-0.5 shadow-sm">
@@ -100,6 +124,28 @@ export function PageContainer({ pageSize, children }: PageContainerProps) {
           </button>
 
           <div className="w-[1px] h-3.5 bg-neutral-200" />
+
+          {/* Zoom Presets — shown in full variant or wider screens */}
+          {variant === "full" && (
+            <>
+              {ZOOM_PRESETS.map((preset) => (
+                <button
+                  key={preset.value}
+                  type="button"
+                  onClick={() => handlePresetZoom(preset.value)}
+                  className={`px-1.5 py-0.5 text-[11px] font-medium rounded transition-colors ${
+                    !isAutoFit && zoom === preset.value
+                      ? "bg-primary/10 text-primary font-semibold"
+                      : "text-neutral-600 hover:text-neutral-900 hover:bg-neutral-100"
+                  }`}
+                  title={`Set zoom to ${preset.label}`}
+                >
+                  {preset.label}
+                </button>
+              ))}
+              <div className="w-[1px] h-3.5 bg-neutral-200" />
+            </>
+          )}
 
           {/* Zoom Out */}
           <button
@@ -128,28 +174,31 @@ export function PageContainer({ pageSize, children }: PageContainerProps) {
             <ZoomIn className="w-3.5 h-3.5" />
           </button>
 
-          <div className="w-[1px] h-3.5 bg-neutral-200" />
-
-          {/* 100% Reset Button */}
-          <button
-            type="button"
-            onClick={handleResetZoom}
-            className={`px-1.5 py-0.5 text-[11px] font-medium rounded transition-colors ${
-              !isAutoFit && zoom === 100
-                ? "bg-primary/10 text-primary font-semibold"
-                : "text-neutral-600 hover:text-neutral-900 hover:bg-neutral-100"
-            }`}
-            title="Reset Zoom to 100%"
-          >
-            100%
-          </button>
+          {variant === "compact" && (
+            <>
+              <div className="w-[1px] h-3.5 bg-neutral-200" />
+              {/* 100% Reset Button */}
+              <button
+                type="button"
+                onClick={handleResetZoom}
+                className={`px-1.5 py-0.5 text-[11px] font-medium rounded transition-colors ${
+                  !isAutoFit && zoom === 100
+                    ? "bg-primary/10 text-primary font-semibold"
+                    : "text-neutral-600 hover:text-neutral-900 hover:bg-neutral-100"
+                }`}
+                title="Reset Zoom to 100%"
+              >
+                100%
+              </button>
+            </>
+          )}
         </div>
       </div>
 
-      {/* Viewport Scroll Canvas: flex-col with mx-auto on content to eliminate left-coordinate clipping */}
+      {/* Viewport Scroll Canvas */}
       <div
         ref={containerRef}
-        className="flex-1 overflow-auto bg-neutral-200/60 p-3 sm:p-6"
+        className={`flex-1 overflow-auto bg-neutral-200/60 ${variant === "full" ? "p-4 sm:p-8" : "p-3 sm:p-6"}`}
       >
         <div className="min-w-fit min-h-fit mx-auto flex flex-col items-center">
           {/* Explicit outer box with exact scaled layout dimensions */}
