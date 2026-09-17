@@ -11,6 +11,7 @@ import {
   Sparkles,
   Target,
   Compass,
+  ShieldCheck,
 } from "lucide-react";
 import { cn } from "../../lib/utils";
 import { useAuth } from "../../hooks/use-auth";
@@ -36,6 +37,11 @@ export const navItems: NavItem[] = [
     label: "Job Tracker",
     href: "/jobs",
     icon: <Briefcase className="h-4 w-4 mr-3" />,
+  },
+  {
+    label: "Resume Quality",
+    href: "/quality",
+    icon: <ShieldCheck className="h-4 w-4 mr-3" />,
   },
   {
     label: "Match Analysis",

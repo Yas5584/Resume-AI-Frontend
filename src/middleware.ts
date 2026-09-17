@@ -4,7 +4,16 @@ import type { NextRequest } from "next/server";
 const AUTH_COOKIE_NAME = "resumeai_session";
 
 // Routes that require authentication
-const PROTECTED_PREFIXES = ["/dashboard", "/resumes", "/jobs", "/settings"];
+const PROTECTED_PREFIXES = [
+  "/dashboard",
+  "/resumes",
+  "/jobs",
+  "/settings",
+  "/matches",
+  "/strategies",
+  "/content-writer",
+  "/quality",
+];
 
 // Routes accessible only to unauthenticated visitors
 const AUTH_ROUTES = ["/login", "/register"];

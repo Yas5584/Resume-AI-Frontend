@@ -62,7 +62,7 @@ export async function apiFetch<T>(
     throw err;
   }
 
-  return (data.data ?? data) as T;
+  return (data.data !== undefined ? data.data : data) as T;
 }
 
 export async function downloadFile(
