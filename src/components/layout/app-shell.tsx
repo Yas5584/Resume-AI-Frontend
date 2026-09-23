@@ -32,7 +32,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   React.useEffect(() => {
     if (!isLoading && !user && !isError) {
-      router.replace("/login");
+      const currentPath =
+        typeof window !== "undefined" ? window.location.pathname : "";
+      const target =
+        currentPath && currentPath !== "/dashboard"
+          ? `/login?redirect=${encodeURIComponent(currentPath)}`
+          : "/login";
+      router.replace(target);
     }
   }, [isLoading, user, isError, router]);
 

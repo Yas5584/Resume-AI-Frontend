@@ -23,17 +23,21 @@ export function useAuth() {
         return response;
       } catch (err: any) {
         if (err.statusCode === 401 || err.statusCode === 403) {
-          if (typeof document !== "undefined") {
+          if (typeof window !== "undefined") {
+            localStorage.removeItem("resumeai_token");
             document.cookie =
-              "resumeai_session=; Path=/; Expires=Thu, 01 Jan 1970 00:00:01 GMT;";
+              "resumeai_session=; Path=/; Expires=Thu, 01 Jan 1970 00:00:01 GMT; Max-Age=0;";
           }
           return null;
         }
         throw err;
       }
     },
-    staleTime: 5 * 60 * 1000,
-    retry: false,
+    staleTime: 60 * 1000,
+    retry: (failureCount, error) => {
+      if (error?.statusCode === 401 || error?.statusCode === 403) return false;
+      return failureCount < 2;
+    },
   });
 
   const loginMutation = useMutation({
@@ -45,11 +49,16 @@ export function useAuth() {
           body: JSON.stringify(credentials),
         },
       );
-      return res.user;
+
+      if (res.token && typeof window !== "undefined") {
+        localStorage.setItem("resumeai_token", res.token);
+        document.cookie = `resumeai_session=${res.token}; Path=/; Max-Age=604800; SameSite=Lax`;
+      }
+
+      return res;
     },
-    onSuccess: (userData) => {
-      queryClient.setQueryData(["auth", "me"], userData);
-      router.push("/dashboard");
+    onSuccess: (res) => {
+      queryClient.setQueryData(["auth", "me"], res.user);
     },
   });
 
@@ -62,24 +71,39 @@ export function useAuth() {
           body: JSON.stringify(data),
         },
       );
-      return res.user;
+
+      if (res.token && typeof window !== "undefined") {
+        localStorage.setItem("resumeai_token", res.token);
+        document.cookie = `resumeai_session=${res.token}; Path=/; Max-Age=604800; SameSite=Lax`;
+      }
+
+      return res;
     },
-    onSuccess: (userData) => {
-      queryClient.setQueryData(["auth", "me"], userData);
-      router.push("/dashboard");
+    onSuccess: (res) => {
+      queryClient.setQueryData(["auth", "me"], res.user);
     },
   });
 
   const logoutMutation = useMutation({
     mutationFn: async () => {
-      await apiFetch("/api/auth/logout", {
-        method: "POST",
-      });
+      try {
+        await apiFetch("/api/auth/logout", {
+          method: "POST",
+        });
+      } catch {
+        // Continue clearing local state even if logout request fails
+      }
+
+      if (typeof window !== "undefined") {
+        localStorage.removeItem("resumeai_token");
+        document.cookie =
+          "resumeai_session=; Path=/; Expires=Thu, 01 Jan 1970 00:00:01 GMT; Max-Age=0;";
+      }
     },
     onSettled: () => {
       queryClient.setQueryData(["auth", "me"], null);
       queryClient.clear();
-      router.push("/login");
+      window.location.href = "/login";
     },
   });
 

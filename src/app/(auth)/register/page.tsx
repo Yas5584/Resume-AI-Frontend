@@ -2,7 +2,6 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import {
   Card,
   CardHeader,
@@ -14,30 +13,32 @@ import {
 import { Button } from "../../../components/ui/button";
 import { Input } from "../../../components/ui/input";
 import { Sparkles, Eye, EyeOff, AlertCircle } from "lucide-react";
-import { apiFetch, ApiError } from "../../../services/api-client";
-import { AuthUser } from "@resumeai/shared";
+import { ApiError } from "../../../services/api-client";
+import { useAuth } from "../../../hooks/use-auth";
 
 export default function RegisterPage() {
-  const router = useRouter();
+  const { register, isRegistering } = useAuth();
 
   const [name, setName] = React.useState("");
   const [email, setEmail] = React.useState("");
   const [password, setPassword] = React.useState("");
   const [confirmPassword, setConfirmPassword] = React.useState("");
   const [showPassword, setShowPassword] = React.useState(false);
-  const [isLoading, setIsLoading] = React.useState(false);
   const [errorMessage, setErrorMessage] = React.useState<string | null>(null);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage(null);
 
-    if (!name.trim()) {
+    const cleanName = name.trim();
+    const cleanEmail = email.trim();
+
+    if (!cleanName) {
       setErrorMessage("Please enter your full name.");
       return;
     }
 
-    if (!email.trim()) {
+    if (!cleanEmail) {
       setErrorMessage("Please enter a valid email address.");
       return;
     }
@@ -52,21 +53,15 @@ export default function RegisterPage() {
       return;
     }
 
-    setIsLoading(true);
-
     try {
-      await apiFetch<{ user: AuthUser; token?: string }>("/api/auth/register", {
-        method: "POST",
-        body: JSON.stringify({
-          name: name.trim(),
-          email: email.trim(),
-          password,
-        }),
+      await register({
+        name: cleanName,
+        email: cleanEmail,
+        password,
       });
 
-      // Registration automatically logs in and sets HttpOnly cookie
-      router.push("/dashboard");
-      router.refresh();
+      // Registration sets cookie & token and navigates cleanly to dashboard
+      window.location.href = "/dashboard";
     } catch (err: any) {
       if (err instanceof ApiError) {
         if (err.statusCode === 409) {
@@ -81,8 +76,6 @@ export default function RegisterPage() {
           "Unable to connect to the server. Please check your connection.",
         );
       }
-    } finally {
-      setIsLoading(false);
     }
   };
 
@@ -166,7 +159,7 @@ export default function RegisterPage() {
             />
           </CardContent>
           <CardFooter className="flex flex-col space-y-3">
-            <Button type="submit" className="w-full" isLoading={isLoading}>
+            <Button type="submit" className="w-full" isLoading={isRegistering}>
               Register Account
             </Button>
             <p className="text-xs text-center text-muted-foreground">

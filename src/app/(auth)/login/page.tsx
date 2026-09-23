@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import {
   Card,
   CardHeader,
@@ -14,41 +14,35 @@ import {
 import { Button } from "../../../components/ui/button";
 import { Input } from "../../../components/ui/input";
 import { Sparkles, Eye, EyeOff, AlertCircle } from "lucide-react";
-import { apiFetch, ApiError } from "../../../services/api-client";
-import { AuthUser } from "@resumeai/shared";
+import { ApiError } from "../../../services/api-client";
+import { useAuth } from "../../../hooks/use-auth";
 import { getSafeRedirect } from "../../../lib/redirect";
 
 function LoginForm() {
-  const router = useRouter();
   const searchParams = useSearchParams();
   const redirectPath = getSafeRedirect(searchParams.get("redirect"));
+  const { login, isLoggingIn } = useAuth();
 
   const [email, setEmail] = React.useState("");
   const [password, setPassword] = React.useState("");
   const [showPassword, setShowPassword] = React.useState(false);
-  const [isLoading, setIsLoading] = React.useState(false);
   const [errorMessage, setErrorMessage] = React.useState<string | null>(null);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage(null);
 
-    if (!email || !password) {
+    const cleanEmail = email.trim();
+    if (!cleanEmail || !password) {
       setErrorMessage("Please enter both email and password.");
       return;
     }
 
-    setIsLoading(true);
-
     try {
-      await apiFetch<{ user: AuthUser; token?: string }>("/api/auth/login", {
-        method: "POST",
-        body: JSON.stringify({ email, password }),
-      });
+      await login({ email: cleanEmail, password });
 
-      // Successful login sets HttpOnly session cookie automatically
-      router.push(redirectPath);
-      router.refresh();
+      // Clean, authoritative navigation to target page with fresh session
+      window.location.href = redirectPath;
     } catch (err: any) {
       if (err instanceof ApiError) {
         if (err.statusCode === 401) {
@@ -61,8 +55,6 @@ function LoginForm() {
           "Unable to reach the server. Please check your connection.",
         );
       }
-    } finally {
-      setIsLoading(false);
     }
   };
 
@@ -118,7 +110,7 @@ function LoginForm() {
           </div>
         </CardContent>
         <CardFooter className="flex flex-col space-y-3">
-          <Button type="submit" className="w-full" isLoading={isLoading}>
+          <Button type="submit" className="w-full" isLoading={isLoggingIn}>
             Sign In
           </Button>
           <p className="text-xs text-center text-muted-foreground">
