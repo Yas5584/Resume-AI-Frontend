@@ -23,11 +23,10 @@ export function useAuth() {
         return response;
       } catch (err: any) {
         if (err.statusCode === 401 || err.statusCode === 403) {
-          if (typeof window !== "undefined") {
-            localStorage.removeItem("resumeai_token");
-            document.cookie =
-              "resumeai_session=; Path=/; Expires=Thu, 01 Jan 1970 00:00:01 GMT; Max-Age=0;";
-          }
+          // Ensure server clears any stale HttpOnly session cookie
+          await apiFetch("/api/auth/logout", { method: "POST" }).catch(
+            () => {},
+          );
           return null;
         }
         throw err;
@@ -42,6 +41,8 @@ export function useAuth() {
 
   const loginMutation = useMutation({
     mutationFn: async (credentials: LoginRequest) => {
+      await queryClient.cancelQueries({ queryKey: ["auth", "me"] });
+
       const res = await apiFetch<{ user: AuthUser; token?: string }>(
         "/api/auth/login",
         {
@@ -50,20 +51,17 @@ export function useAuth() {
         },
       );
 
-      if (res.token && typeof window !== "undefined") {
-        localStorage.setItem("resumeai_token", res.token);
-        document.cookie = `resumeai_session=${res.token}; Path=/; Max-Age=604800; SameSite=Lax`;
-      }
+      // Update React Query cache synchronously before resolving so AppShell immediately sees the authenticated user
+      queryClient.setQueryData(["auth", "me"], res.user);
 
       return res;
-    },
-    onSuccess: (res) => {
-      queryClient.setQueryData(["auth", "me"], res.user);
     },
   });
 
   const registerMutation = useMutation({
     mutationFn: async (data: RegisterRequest) => {
+      await queryClient.cancelQueries({ queryKey: ["auth", "me"] });
+
       const res = await apiFetch<{ user: AuthUser; token?: string }>(
         "/api/auth/register",
         {
@@ -72,38 +70,29 @@ export function useAuth() {
         },
       );
 
-      if (res.token && typeof window !== "undefined") {
-        localStorage.setItem("resumeai_token", res.token);
-        document.cookie = `resumeai_session=${res.token}; Path=/; Max-Age=604800; SameSite=Lax`;
-      }
+      // Update React Query cache synchronously before resolving so AppShell immediately sees the authenticated user
+      queryClient.setQueryData(["auth", "me"], res.user);
 
       return res;
-    },
-    onSuccess: (res) => {
-      queryClient.setQueryData(["auth", "me"], res.user);
     },
   });
 
   const logoutMutation = useMutation({
     mutationFn: async () => {
+      await queryClient.cancelQueries({ queryKey: ["auth", "me"] });
       try {
         await apiFetch("/api/auth/logout", {
           method: "POST",
         });
       } catch {
-        // Continue clearing local state even if logout request fails
-      }
-
-      if (typeof window !== "undefined") {
-        localStorage.removeItem("resumeai_token");
-        document.cookie =
-          "resumeai_session=; Path=/; Expires=Thu, 01 Jan 1970 00:00:01 GMT; Max-Age=0;";
+        // Continue clearing client state even if network request fails
       }
     },
     onSettled: () => {
       queryClient.setQueryData(["auth", "me"], null);
       queryClient.clear();
-      window.location.href = "/login";
+      router.replace("/login");
+      router.refresh();
     },
   });
 

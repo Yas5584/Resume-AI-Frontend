@@ -15,9 +15,6 @@ const PROTECTED_PREFIXES = [
   "/quality",
 ];
 
-// Routes accessible only to unauthenticated visitors
-const AUTH_ROUTES = ["/login", "/register"];
-
 /**
  * Safely inspects a JWT payload to check if it has expired.
  * Does not perform cryptographic verification (handled by backend API),
@@ -56,13 +53,9 @@ export function middleware(request: NextRequest) {
     (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`),
   );
 
-  const isAuthRoute = AUTH_ROUTES.some(
-    (route) => pathname === route || pathname.startsWith(`${route}/`),
-  );
-
   const hasValidSession = !!sessionCookie && !isTokenExpired(sessionCookie);
 
-  // 1. Unauthenticated or expired user accessing a protected route -> Redirect to /login
+  // Unauthenticated or expired user accessing a protected route -> Redirect to /login
   if (isProtected && !hasValidSession) {
     const loginUrl = new URL("/login", request.url);
     if (pathname !== "/dashboard") {
@@ -78,11 +71,6 @@ export function middleware(request: NextRequest) {
       });
     }
     return response;
-  }
-
-  // 2. Already authenticated user accessing /login or /register -> Redirect to /dashboard
-  if (isAuthRoute && hasValidSession) {
-    return NextResponse.redirect(new URL("/dashboard", request.url));
   }
 
   return NextResponse.next();

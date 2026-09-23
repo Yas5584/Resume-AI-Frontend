@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   Card,
   CardHeader,
@@ -19,14 +19,21 @@ import { useAuth } from "../../../hooks/use-auth";
 import { getSafeRedirect } from "../../../lib/redirect";
 
 function LoginForm() {
+  const router = useRouter();
   const searchParams = useSearchParams();
   const redirectPath = getSafeRedirect(searchParams.get("redirect"));
-  const { login, isLoggingIn } = useAuth();
+  const { user, isLoading, login, isLoggingIn } = useAuth();
 
   const [email, setEmail] = React.useState("");
   const [password, setPassword] = React.useState("");
   const [showPassword, setShowPassword] = React.useState(false);
   const [errorMessage, setErrorMessage] = React.useState<string | null>(null);
+
+  React.useEffect(() => {
+    if (!isLoading && user) {
+      router.replace(redirectPath);
+    }
+  }, [isLoading, user, redirectPath, router]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -40,9 +47,8 @@ function LoginForm() {
 
     try {
       await login({ email: cleanEmail, password });
-
-      // Clean, authoritative navigation to target page with fresh session
-      window.location.href = redirectPath;
+      router.replace(redirectPath);
+      router.refresh();
     } catch (err: any) {
       if (err instanceof ApiError) {
         if (err.statusCode === 401) {

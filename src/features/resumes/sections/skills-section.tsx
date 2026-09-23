@@ -1,6 +1,7 @@
 import * as React from "react";
 import { SkillCategory, ResumeData } from "@resumeai/shared";
 import { Input } from "../../../components/ui/input";
+import { TagInput } from "../../../components/ui/tag-input";
 import { Button } from "../../../components/ui/button";
 import { Card } from "../../../components/ui/card";
 import { Plus, Trash2, ArrowUp, ArrowDown, Sparkles } from "lucide-react";
@@ -139,17 +140,12 @@ export function SkillsSection({
               />
             </div>
             <div className="sm:col-span-2">
-              <Input
-                label="Skills (Comma-separated) *"
+              <TagInput
+                label="Skills *"
                 placeholder="e.g. TypeScript, React, Next.js, Node.js"
-                value={(cat.skills || []).join(", ")}
-                onChange={(e) =>
-                  updateCategory(index, {
-                    skills: e.target.value
-                      .split(",")
-                      .map((s) => s.trim())
-                      .filter(Boolean),
-                  })
+                value={cat.skills || []}
+                onChange={(skills) =>
+                  updateCategory(index, { skills })
                 }
               />
             </div>

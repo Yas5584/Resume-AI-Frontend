@@ -1,6 +1,7 @@
 import * as React from "react";
 import { Project, ResumeData } from "@resumeai/shared";
 import { Input } from "../../../components/ui/input";
+import { TagInput } from "../../../components/ui/tag-input";
 import { Button } from "../../../components/ui/button";
 import { Card } from "../../../components/ui/card";
 import { Plus, Trash2, ArrowUp, ArrowDown, Sparkles } from "lucide-react";
@@ -156,17 +157,12 @@ export function ProjectsSection({
           </div>
 
           <div className="space-y-1.5">
-            <Input
-              label="Technologies Used (Comma separated)"
+            <TagInput
+              label="Technologies Used"
               placeholder="e.g. TypeScript, Redis, Node.js, Docker"
-              value={(proj.technologies || []).join(", ")}
-              onChange={(e) =>
-                updateProject(index, {
-                  technologies: e.target.value
-                    .split(",")
-                    .map((s) => s.trim())
-                    .filter(Boolean),
-                })
+              value={proj.technologies || []}
+              onChange={(technologies) =>
+                updateProject(index, { technologies })
               }
             />
           </div>

@@ -32,14 +32,8 @@ export async function apiFetch<T>(
     ...(headers as Record<string, string>),
   };
 
-  const storedToken =
-    token ||
-    (typeof window !== "undefined"
-      ? localStorage.getItem("resumeai_token") || undefined
-      : undefined);
-
-  if (storedToken && !requestHeaders["Authorization"]) {
-    requestHeaders["Authorization"] = `Bearer ${storedToken}`;
+  if (token && !requestHeaders["Authorization"]) {
+    requestHeaders["Authorization"] = `Bearer ${token}`;
   }
 
   const url = endpoint.startsWith("http")

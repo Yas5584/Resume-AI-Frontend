@@ -1,6 +1,7 @@
 import * as React from "react";
 import { WorkExperience, ResumeData } from "@resumeai/shared";
 import { Input } from "../../../components/ui/input";
+import { TagInput } from "../../../components/ui/tag-input";
 import { Button } from "../../../components/ui/button";
 import { Card } from "../../../components/ui/card";
 import { Plus, Trash2, ArrowUp, ArrowDown, Sparkles } from "lucide-react";
@@ -230,6 +231,17 @@ export function ExperienceSection({
                 <span>I currently work here</span>
               </label>
             </div>
+          </div>
+
+          <div className="space-y-1.5">
+            <TagInput
+              label="Technologies Used"
+              placeholder="e.g. React, Node.js, PostgreSQL, Docker"
+              value={exp.technologiesUsed || []}
+              onChange={(technologiesUsed) =>
+                updateExperience(index, { technologiesUsed })
+              }
+            />
           </div>
 
           {/* Bullet Points Management */}
