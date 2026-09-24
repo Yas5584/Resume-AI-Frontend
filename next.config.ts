@@ -9,6 +9,28 @@ const nextConfig: NextConfig = {
     };
     return config;
   },
+  async redirects() {
+    return [
+      {
+        source: "/experiences/:path*",
+        destination: "/dashboard",
+        permanent: false,
+      },
+    ];
+  },
+  async headers() {
+    return [
+      {
+        source: "/:path*",
+        headers: [
+          {
+            key: "Content-Security-Policy",
+            value: "frame-ancestors 'self' https://whop.com https://*.whop.com;",
+          },
+        ],
+      },
+    ];
+  },
   async rewrites() {
     const apiTarget =
       process.env.INTERNAL_API_URL ||
