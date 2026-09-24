@@ -5,6 +5,18 @@ import { apiFetch, ApiError } from "../services/api-client";
 import { AuthUser, LoginRequest, RegisterRequest } from "@resumeai/shared";
 import { useRouter } from "next/navigation";
 
+function clearLegacyClientAuthState() {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.removeItem("resumeai_token");
+    sessionStorage.removeItem("resumeai_token");
+    document.cookie =
+      "resumeai_session=; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT; Max-Age=0;";
+  } catch {
+    // ignore storage access errors
+  }
+}
+
 export function useAuth() {
   const queryClient = useQueryClient();
   const router = useRouter();
@@ -19,14 +31,13 @@ export function useAuth() {
     queryKey: ["auth", "me"],
     queryFn: async () => {
       try {
-        const response = await apiFetch<AuthUser>("/api/auth/me");
+        const response = await apiFetch<AuthUser>("/api/auth/me", {
+          cache: "no-store",
+        });
         return response;
       } catch (err: any) {
         if (err.statusCode === 401 || err.statusCode === 403) {
-          // Ensure server clears any stale HttpOnly session cookie
-          await apiFetch("/api/auth/logout", { method: "POST" }).catch(
-            () => {},
-          );
+          clearLegacyClientAuthState();
           return null;
         }
         throw err;
@@ -42,16 +53,18 @@ export function useAuth() {
   const loginMutation = useMutation({
     mutationFn: async (credentials: LoginRequest) => {
       await queryClient.cancelQueries({ queryKey: ["auth", "me"] });
+      clearLegacyClientAuthState();
 
       const res = await apiFetch<{ user: AuthUser; token?: string }>(
         "/api/auth/login",
         {
           method: "POST",
+          cache: "no-store",
           body: JSON.stringify(credentials),
         },
       );
 
-      // Update React Query cache synchronously before resolving so AppShell immediately sees the authenticated user
+      // Populate React Query cache synchronously before resolving so AppShell immediately sees the authenticated user
       queryClient.setQueryData(["auth", "me"], res.user);
 
       return res;
@@ -61,16 +74,18 @@ export function useAuth() {
   const registerMutation = useMutation({
     mutationFn: async (data: RegisterRequest) => {
       await queryClient.cancelQueries({ queryKey: ["auth", "me"] });
+      clearLegacyClientAuthState();
 
       const res = await apiFetch<{ user: AuthUser; token?: string }>(
         "/api/auth/register",
         {
           method: "POST",
+          cache: "no-store",
           body: JSON.stringify(data),
         },
       );
 
-      // Update React Query cache synchronously before resolving so AppShell immediately sees the authenticated user
+      // Populate React Query cache synchronously before resolving so AppShell immediately sees the authenticated user
       queryClient.setQueryData(["auth", "me"], res.user);
 
       return res;
@@ -79,20 +94,23 @@ export function useAuth() {
 
   const logoutMutation = useMutation({
     mutationFn: async () => {
-      await queryClient.cancelQueries({ queryKey: ["auth", "me"] });
+      await queryClient.cancelQueries();
+      clearLegacyClientAuthState();
       try {
         await apiFetch("/api/auth/logout", {
           method: "POST",
+          cache: "no-store",
         });
       } catch {
         // Continue clearing client state even if network request fails
       }
     },
     onSettled: () => {
-      queryClient.setQueryData(["auth", "me"], null);
+      clearLegacyClientAuthState();
+      // Clear all cached queries FIRST, then set ["auth", "me"] to null so it remains cached as unauthenticated
       queryClient.clear();
+      queryClient.setQueryData(["auth", "me"], null);
       router.replace("/login");
-      router.refresh();
     },
   });
 

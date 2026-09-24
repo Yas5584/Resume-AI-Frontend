@@ -19,7 +19,7 @@ import { useAuth } from "../../../hooks/use-auth";
 
 export default function RegisterPage() {
   const router = useRouter();
-  const { user, isLoading, register, isRegistering } = useAuth();
+  const { register, isRegistering } = useAuth();
 
   const [name, setName] = React.useState("");
   const [email, setEmail] = React.useState("");
@@ -27,12 +27,6 @@ export default function RegisterPage() {
   const [confirmPassword, setConfirmPassword] = React.useState("");
   const [showPassword, setShowPassword] = React.useState(false);
   const [errorMessage, setErrorMessage] = React.useState<string | null>(null);
-
-  React.useEffect(() => {
-    if (!isLoading && user) {
-      router.replace("/dashboard");
-    }
-  }, [isLoading, user, router]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -69,7 +63,6 @@ export default function RegisterPage() {
       });
 
       router.replace("/dashboard");
-      router.refresh();
     } catch (err: any) {
       if (err instanceof ApiError) {
         if (err.statusCode === 409) {
