@@ -112,7 +112,24 @@ function LoginForm() {
           <Button type="submit" className="w-full" isLoading={isLoggingIn}>
             Sign In
           </Button>
-          <p className="text-xs text-center text-muted-foreground">
+
+          <div className="relative my-2 w-full text-center">
+            <div className="absolute inset-0 flex items-center">
+              <span className="w-full border-t border-border" />
+            </div>
+            <div className="relative flex justify-center text-xs uppercase">
+              <span className="bg-card px-2 text-muted-foreground">Or</span>
+            </div>
+          </div>
+
+          <a
+            href="/api/auth/login"
+            className="inline-flex items-center justify-center rounded-md text-sm font-medium border border-input bg-background hover:bg-muted text-foreground h-10 px-4 py-2 w-full transition-colors"
+          >
+            Sign in with Whop
+          </a>
+
+          <p className="text-xs text-center text-muted-foreground pt-1">
             Don&apos;t have an account yet?{" "}
             <Link
               href="/register"
