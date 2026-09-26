@@ -13,7 +13,7 @@ const nextConfig: NextConfig = {
     return [
       {
         source: "/experiences/:path*",
-        destination: "/dashboard",
+        destination: "/app",
         permanent: false,
       },
     ];
